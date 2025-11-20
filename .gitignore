@@ -1,0 +1,34 @@
+# Ignore local secrets and tokens
+backend/token.json
+backend/credentials.json
+.env
+.env.local
+
+# Model / large binary files
+*.h5
+*.pkl
+*.pt
+*.joblib
+*.ckpt
+*.onnx
+*.bin
+
+# Node / frontend builds
+node_modules/
+.next/
+dist/
+build/
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Large files and data
+*.csv
+*.zip
