@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi import Request
 from backend.gmail_service import get_gmail_service, fetch_latest_emails
 from backend.predict import predict_email
 
@@ -73,22 +72,6 @@ def flagged():
 def refresh():
     # For the demo this simply returns ok. Integrate with background job if needed.
     return {'ok': True}
-
-
-@app.post('/action/mark-safe')
-async def action_mark_safe(request: Request):
-    body = await request.json()
-    msg_id = body.get('id')
-    # Placeholder: implement labeling or moving message in Gmail if desired
-    return {'ok': True, 'id': msg_id}
-
-
-@app.post('/action/delete')
-async def action_delete(request: Request):
-    body = await request.json()
-    msg_id = body.get('id')
-    # Placeholder: implement delete via Gmail API if desired
-    return {'ok': True, 'id': msg_id}
 
 
 if __name__ == '__main__':
