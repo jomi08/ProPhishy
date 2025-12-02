@@ -8,7 +8,7 @@ export default function EmailList({ emails }) {
   // -----------------------------
   const markSafe = async (id) => {
     try {
-      await fetch(`${process.env.API_URL}/action/mark-safe`, {
+      await fetch(`${process.env.BACKEND_URL}/action/mark-safe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id })
@@ -24,7 +24,7 @@ export default function EmailList({ emails }) {
   // -----------------------------
   const deleteEmail = async (id) => {
     try {
-      await fetch(`${process.env.API_URL}/action/delete`, {
+      await fetch(`${process.env.BACKEND_URL}/action/delete`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id })

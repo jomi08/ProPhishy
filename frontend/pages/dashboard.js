@@ -1,7 +1,24 @@
 import Metrics from '../components/Metrics'
 import EmailList from '../components/EmailList'
+import { useState, useEffect } from 'react'
 
 export default function Dashboard() {
+  const [emails, setEmails] = useState([])
+
+  const fetchEmails = async () => {
+    const res = await fetch('/api/proxy/emails')
+    const data = await res.json()
+    const emailsWithPhishingStatus = data.map(email => ({
+      ...email,
+      is_phishing: email.score > 0.5 // Assuming a threshold of 0.5
+    }))
+    setEmails(emailsWithPhishingStatus)
+  }
+
+  useEffect(() => {
+    fetchEmails()
+  }, [])
+
   return (
     <main className="container">
       <header>
@@ -12,7 +29,7 @@ export default function Dashboard() {
       <section style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16, marginTop: 18 }}>
         <div>
           <Metrics />
-          <EmailList />
+          <EmailList emails={emails} />
         </div>
         <aside>
           <div style={{ position: 'sticky', top: 16 }}>

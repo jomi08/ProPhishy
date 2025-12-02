@@ -1,73 +1,125 @@
-from __future__ import print_function
-import os.path
+# gmail_service.py
+import os
 import base64
-import re
+import json
+import time
+from typing import List, Dict, Optional
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
+from email import policy
+from email.parser import BytesParser
 
-# Gmail API scope
-SCOPES = ['https://www.googleapis.com/auth/gmail.readonly']
+# Scopes: readonly for reading mail, modify for marking read/delete if needed
+SCOPES = ["https://www.googleapis.com/auth/gmail.readonly",
+          "https://www.googleapis.com/auth/gmail.modify"]
 
-def get_gmail_service():
+CREDENTIALS_PATH = os.path.join(os.path.dirname(__file__), "credentials.json")
+TOKEN_PATH = os.path.join(os.path.dirname(__file__), "token.json")
+
+
+def ensure_credentials() -> Credentials:
     creds = None
-    if os.path.exists('token.json'):
-        creds = Credentials.from_authorized_user_file('token.json', SCOPES)
+    if os.path.exists(TOKEN_PATH):
+        creds = Credentials.from_authorized_user_file(TOKEN_PATH, SCOPES)
+    # If there are no valid credentials, do the OAuth flow
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(
-                'credentials.json', SCOPES)
+            if not os.path.exists(CREDENTIALS_PATH):
+                raise FileNotFoundError("credentials.json not found in backend/ directory")
+            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_PATH, SCOPES)
             creds = flow.run_local_server(port=0)
-        with open('token.json', 'w') as token:
-            token.write(creds.to_json())
-    service = build('gmail', 'v1', credentials=creds)
+        with open(TOKEN_PATH, "w") as f:
+            f.write(creds.to_json())
+    return creds
+
+
+def get_service():
+    creds = ensure_credentials()
+    service = build("gmail", "v1", credentials=creds, cache_discovery=False)
     return service
 
-def fetch_latest_emails(service, n=5):
-    results = service.users().messages().list(userId='me', maxResults=n).execute()
-    messages = results.get('messages', [])
-    emails = []
-    for msg in messages:
-        txt = service.users().messages().get(userId='me', id=msg['id'], format='full').execute()
-        headers = {h['name'].lower(): h['value'] for h in txt.get('payload', {}).get('headers', [])}
-        subject = headers.get('subject', '')
-        sender = headers.get('from', '')
 
-        # try to extract a snippet/body
-        snippet = txt.get('snippet', '')
-        body = ''
-        payload = txt.get('payload', {})
-        parts = payload.get('parts', [])
-        if parts:
-            # find the text/plain part if present
-            for p in parts:
-                mime = p.get('mimeType', '')
-                if mime == 'text/plain' and p.get('body', {}).get('data'):
-                    body = base64.urlsafe_b64decode(p['body']['data']).decode('utf-8', errors='ignore')
-                    break
-            if not body:
-                # fallback to first part's body
-                try:
-                    body = base64.urlsafe_b64decode(parts[0]['body'].get('data', '')).decode('utf-8', errors='ignore')
-                except Exception:
-                    body = ''
-        else:
-            body = base64.urlsafe_b64decode(payload.get('body', {}).get('data', '') or b'').decode('utf-8', errors='ignore') if payload.get('body', {}).get('data') else ''
+def extract_plain_text_from_message(message_payload) -> str:
+    """
+    Given a raw message payload (from Gmail API 'get' with format='raw' or 'full'),
+    attempt to extract a readable plain text string.
+    """
+    # Try to handle raw first
+    if "raw" in message_payload:
+        raw = base64.urlsafe_b64decode(message_payload["raw"])
+        msg = BytesParser(policy=policy.default).parsebytes(raw)
+        # prefer text/plain
+        if msg.get_body(preferencelist=("plain",)):
+            return msg.get_body(preferencelist=("plain",)).get_content()
+        # fallback to html body
+        if msg.get_body(preferencelist=("html",)):
+            return msg.get_body(preferencelist=("html",)).get_content()
+        return msg.get_payload(decode=True).decode(errors="ignore")
 
-        emails.append({
-            'id': msg['id'],
-            'subject': subject,
-            'from': sender,
-            'snippet': snippet,
-            'body': body
+    # If message_payload is a 'full' representation with parts
+    payload = message_payload.get("payload", {})
+    def walk_parts(part):
+        mime = part.get("mimeType", "")
+        if mime == "text/plain" and "body" in part and part["body"].get("data"):
+            raw = part["body"]["data"]
+            return base64.urlsafe_b64decode(raw).decode(errors="ignore")
+        # if multipart, go deeper
+        for p in part.get("parts", []) or []:
+            text = walk_parts(p)
+            if text:
+                return text
+        return None
+
+    text = walk_parts(payload)
+    if text:
+        return text
+    # fallback: try snippet
+    return message_payload.get("snippet", "")
+
+
+def fetch_latest_messages(max_results: int = 25, label_ids: Optional[List[str]] = None) -> List[Dict]:
+    """
+    Fetch the latest messages (list -> get each)
+    Returns a list of message dicts with keys: id, threadId, from, subject, snippet, raw_text, internalDate
+    """
+    service = get_service()
+    query_label = label_ids if label_ids else ["INBOX"]
+    results = service.users().messages().list(userId="me", maxResults=max_results, labelIds=query_label).execute()
+    messages = results.get("messages", []) or []
+
+    out = []
+    for m in messages:
+        mid = m["id"]
+        # get message in full format
+        msg = service.users().messages().get(userId="me", id=mid, format="full").execute()
+        headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        frm = headers.get("from", "")
+        subject = headers.get("subject", "")
+        snippet = msg.get("snippet", "")
+        raw_text = extract_plain_text_from_message(msg)
+        internalDate = int(msg.get("internalDate", 0))
+        out.append({
+            "id": mid,
+            "threadId": msg.get("threadId"),
+            "from": frm,
+            "subject": subject,
+            "snippet": snippet,
+            "body": raw_text,
+            "internalDate": internalDate,
+            "raw": msg
         })
-    return emails
+    return out
 
-if __name__ == '__main__':
-    service = get_gmail_service()
-    emails = fetch_latest_emails(service, n=3)
-    for i, e in enumerate(emails, 1):
-        print(f"\n--- Email {i} ---\n{e[:500]}")
+
+def mark_as_read(message_id: str):
+    service = get_service()
+    service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
+
+
+def delete_message(message_id: str):
+    service = get_service()
+    service.users().messages().trash(userId="me", id=message_id).execute()

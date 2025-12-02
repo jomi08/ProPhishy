@@ -2,7 +2,7 @@ const BACKEND = process.env.BACKEND_URL || 'http://127.0.0.1:8000'
 
 export default async function handler(req, res) {
   try {
-    const r = await globalThis.fetch(`${BACKEND}/flagged`)
+    const r = await globalThis.fetch(`${BACKEND}/emails`)
     const json = await r.json()
     res.status(200).json(json)
   } catch (err) {

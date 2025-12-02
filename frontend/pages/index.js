@@ -412,7 +412,12 @@ export default function Home() {
 
               <div className="mt-4">
                 <h4 className="text-sm text-muted">Preview</h4>
-                <div className="mt-2 p-4 bg-surface rounded">{selected.body ?? selected.preview ?? 'No preview available'}</div>
+                <div
+  className="mt-2 p-4 bg-surface rounded overflow-y-auto"
+  style={{ maxHeight: "300px", whiteSpace: "pre-wrap", fontSize: "14px" }}
+>
+  {selected.body ?? selected.preview ?? 'No preview available'}
+</div>
               </div>
 
               <div className="mt-4 flex justify-end gap-2">
