@@ -69,28 +69,34 @@ function EmailRow({ e, onOpen, onMarkSafe, onDelete }) {
       <td className="py-3 px-2 text-sm">{e.from}</td>
       <td className="py-3 px-2 text-sm">{e.subject}</td>
       <td className="py-3 px-2 text-sm">{e.score ?? '—'}</td>
-      <td className="py-3 px-2 text-right">
-        <button
-          onClick={() => onOpen(e)}
-          className="mr-2 px-2 py-1 rounded action-btn"
-          type="button"
-        >
-          View
-        </button>
-        <button
-          onClick={() => onMarkSafe(e.id ?? e._id)}
-          className="mr-2 px-2 py-1 rounded safe-btn"
-          type="button"
-        >
-          Safe
-        </button>
-        <button
-          onClick={() => onDelete(e.id ?? e._id)}
-          className="px-2 py-1 rounded delete-btn"
-          type="button"
-        >
-          Delete
-        </button>
+      <td className="py-3 px-2 text-right flex items-center justify-end gap-2">
+        {/* VIEW BUTTON - smaller */}
+  <button
+    onClick={() => onOpen(e)}
+    className="px-2 py-1 text-xs rounded action-btn"
+    type="button"
+  >
+    View
+  </button>
+
+  {/* DELETE IN THE MIDDLE - smaller */}
+  <button
+    onClick={() => onDelete(e.id ?? e._id)}
+    className="px-2 py-1 text-xs rounded delete-btn"
+    type="button"
+  >
+    Delete
+  </button>
+
+  {/* SAFE BUTTON - smaller */}
+  <button
+    onClick={() => onMarkSafe(e.id ?? e._id)}
+    className="px-2 py-1 text-xs rounded safe-btn"
+    type="button"
+  >
+    Safe
+  </button>
+
       </td>
     </tr>
   )
@@ -310,11 +316,11 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="flex items-center gap-3">
               <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search flagged: from, subject, score"
-                className="px-3 py-2 border rounded-lg w-72"
-              />
+  value={q}
+  onChange={(e) => setQ(e.target.value)}
+  placeholder="Search flagged: from, subject, score"
+  className="px-3 py-2 border rounded-lg w-72 text-sm"
+/>
 
               <div className="flex items-center gap-2">
                 <button
@@ -376,7 +382,12 @@ export default function Home() {
               ) : (
                 emails.map((e) => (
                   <div key={e.id ?? e._id ?? Math.random()} className="bg-white p-4 rounded-2xl shadow">
-                    <div className="font-semibold" style={{color: 'var(--maroon-700)'}}>{e.from}</div>
+                    <div
+  className="font-semibold"
+  style={{ color: 'var(--maroon-700)', fontSize: '1rem' }}
+>
+  {e.from}
+</div>
                     <div className="text-sm text-gray-600 mt-1">{e.subject}</div>
                     <div className="mt-3 flex items-center justify-between">
                       <div className="text-xs text-muted">Score: {e.score ?? '—'}</div>
@@ -421,8 +432,14 @@ export default function Home() {
               </div>
 
               <div className="mt-4 flex justify-end gap-2">
-                <button onClick={() => { markSafe(selected.id ?? selected._id); setSelected(null) }} className="px-4 py-2 rounded safe-btn">Mark safe</button>
-                <button onClick={() => { deleteEmail(selected.id ?? selected._id); setSelected(null) }} className="px-4 py-2 rounded delete-btn">Delete</button>
+                <button onClick={() => { markSafe(selected.id ?? selected._id); setSelected(null) }} className="px-3 py-1.5 rounded safe-btn"
+                 style={{ fontSize: '0.9rem' }}
+>
+  Mark safe</button>
+                <button onClick={() => { deleteEmail(selected.id ?? selected._id); setSelected(null) }} className="px-3 py-1 rounded delete-btn"
+                 style={{ fontSize: '0.9rem' }}
+>
+  Delete</button>
               </div>
             </div>
           </div>
