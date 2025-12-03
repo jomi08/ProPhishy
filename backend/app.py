@@ -1,4 +1,4 @@
-# app.py
+# backend/app.py
 import os
 import json
 from typing import List, Dict
@@ -39,10 +39,23 @@ def save_flagged():
 load_flagged()
 
 @app.get("/metrics")
-def get_metrics():
-    total = sum(1 for _ in _flagged)  # here flagged is being used for spam count; adjust if you store metrics separately
-    # If you want separate total/ read counts you'd need to compute from Gmail API or store them
-    return {"total": None, "read": None, "spam": len(_flagged)}
+def get_metrics(max_results: int = 200):
+    """
+    Returns simple metrics computed from a recent fetch:
+      - total: number of messages fetched (max_results)
+      - read: number of messages without 'UNREAD' label among fetched
+      - spam: number of flagged messages (persisted locally)
+    """
+    try:
+        msgs = fetch_latest_messages(max_results=max_results)
+    except Exception:
+        # fallback to stored flagged data only
+        return {"total": None, "read": None, "spam": len(_flagged)}
+    total = len(msgs)
+    # count messages that do NOT have 'UNREAD' label => those are read
+    read = sum(1 for m in msgs if 'UNREAD' not in (m.get("labelIds") or []))
+    spam = len(_flagged)
+    return {"total": total, "read": read, "spam": spam}
 
 @app.get("/flagged")
 def get_flagged():
@@ -75,20 +88,19 @@ def refresh_emails(max_results: int = 25):
             "label": pred.get("label"),
             "raw": None
         }
-        # If classifier says spam, add or update in flagged list
+        # If we already have this message in flagged store, update its score/label
         exists = next((x for x in _flagged if x["id"] == entry["id"]), None)
-        if pred.get("label") == "spam":
-            if not exists:
+
+        if exists:
+            # always update stored entry so score/label reflect latest classifier
+            exists.update(entry)
+            changed = True
+        else:
+            # if classifier says spam, insert new flagged entry
+            if pred.get("label") == "spam":
                 _flagged.insert(0, entry)
                 changed = True
-            else:
-                # update score/label
-                exists.update(entry)
-                changed = True
-        else:
-            # optional: if previously flagged but now predicted legit, keep or remove
-            # we will not auto-remove to avoid races, frontend mark-safe will remove
-            pass
+            # else: do not add legit messages to flagged list
 
     if changed:
         save_flagged()

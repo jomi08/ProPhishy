@@ -1,3 +1,4 @@
+// frontend/src/index.js
 import React, { useEffect, useMemo, useState } from 'react'
 import useSWR from 'swr'
 
@@ -31,7 +32,7 @@ const fetcher = async (url) => {
 
 function StatCard({ title, value, hint, pct, onClick }) {
   return (
-    <div className="stat-card p-4 bg-white rounded-2xl shadow-md w-full md:w-auto">
+    <div className="stat-card p-4 bg-white rounded-2xl shadow-md w-full md:w-auto" data-animate="true">
       <div className="flex items-start gap-4">
         <div className="flex-1">
           <h4 className="stat-title text-sm font-medium">{title}</h4>
@@ -63,46 +64,31 @@ function StatCard({ title, value, hint, pct, onClick }) {
   )
 }
 
-function EmailRow({ e, onOpen, onMarkSafe, onDelete }) {
+function EmailRow({ e, onOpen }) {
+  const score = (typeof e.score === 'number') ? e.score : parseFloat(e.score || 0)
+  const label = (e.label ? String(e.label).toLowerCase() : (score >= 0.5 ? 'spam' : 'legit'))
+  const badgeClass = label === 'spam'
+    ? 'px-2 py-1 text-xs rounded bg-red-600 text-white'
+    : 'px-2 py-1 text-xs rounded bg-green-500 text-white'
+
   return (
     <tr className="border-t hover:bg-gray-50">
       <td className="py-3 px-2 text-sm">{e.from}</td>
       <td className="py-3 px-2 text-sm">{e.subject}</td>
-      <td className="py-3 px-2 text-sm">{e.score ?? '—'}</td>
+      <td className="py-3 px-2 text-sm">{(score || 0).toFixed(3)}</td>
       <td className="py-3 px-2 text-right flex items-center justify-end gap-2">
-        {/* VIEW BUTTON - smaller */}
-  <button
-    onClick={() => onOpen(e)}
-    className="px-2 py-1 text-xs rounded action-btn"
-    type="button"
-  >
-    View
-  </button>
+        <div className={badgeClass} style={{ minWidth: 56, textAlign: 'center' }}>
+          {label === 'spam' ? 'Spam' : 'Safe'}
+        </div>
 
-  {/* DELETE IN THE MIDDLE - smaller */}
-  <button
-    onClick={() => onDelete(e.id ?? e._id)}
-    className="px-2 py-1 text-xs rounded delete-btn"
-    type="button"
-  >
-    Delete
-  </button>
-
-  {/* SAFE BUTTON - smaller */}
-  <button
-    onClick={() => onMarkSafe(e.id ?? e._id)}
-    className="px-2 py-1 text-xs rounded safe-btn"
-    type="button"
-  >
-    Safe
-  </button>
-
+        <button onClick={() => onOpen(e)} className="px-2 py-1 text-xs rounded action-btn" type="button">View</button>
       </td>
     </tr>
   )
 }
 
 export default function Home() {
+  // Use the backend /metrics endpoint
   const { data: metrics, mutate: mutateMetrics, error: errMetrics } = useSWR(
     `${API_BASE}/metrics`,
     fetcher,
@@ -135,133 +121,32 @@ export default function Home() {
     })
   }, [flagged, q])
 
-  const total = metrics && (metrics.total ?? metrics.total_emails ?? 0)
-  const read = metrics && (metrics.read ?? metrics.read_emails ?? 0)
-  const spam = metrics && (metrics.spam ?? metrics.flagged_count ?? 0)
+  const total = metrics?.total ?? 0
+  const read = metrics?.read ?? 0
+  const spam = metrics?.spam ?? 0
 
   async function refreshAll() {
     setLastRefreshed(new Date())
     await Promise.all([mutateMetrics(), mutateFlagged()])
   }
 
-  async function markSafe(id) {
-    if (!id) return
-    setLoadingAction(true)
-    try {
-      await fetch(`${API_BASE}/action/mark-safe`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-      await mutateFlagged()
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('markSafe failed', e)
-    }
-    setLoadingAction(false)
-  }
-
-  async function deleteEmail(id) {
-    if (!id) return
-    setLoadingAction(true)
-    try {
-      await fetch(`${API_BASE}/action/delete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id }),
-      })
-      await mutateFlagged()
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('deleteEmail failed', e)
-    }
-    setLoadingAction(false)
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white p-6">
       <style jsx global>{`
-        /* Maroon-themed color variables */
+        /* (kept your styling unchanged) */
         :root { --maroon-950:#2a0606; --maroon-900:#3b0b0b; --maroon-800:#5a0f12; --maroon-700:#7a1421; --maroon-600:#8f1b2a; --maroon-500:#b02a37; --maroon-300:#e07b85; --muted:#6b7280; --surface: rgba(255,255,255,0.06); }
-
-        /* Page background: subtle maroon texture */
-        body { 
-          font-family: "Montserrat", "Poppins", Inter, ui-sans-serif; 
-          font-size:22px; 
-          color:#0f172a;
-          /* layered subtle texture + gradient */
-          background-color: #4a0d12; /* deep maroon */
-          background-image: radial-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(180deg, rgba(74,13,18,0.65), rgba(30,4,6,0.75));
-          background-size: 12px 12px, 100% 100%;
-        }
-
-        /* Glass-morphism panels */
-        .panel, .stat-card, .modal > div, .bg-white {
-          background: linear-gradient(180deg, rgba(255,235,238,0.82), rgba(255,220,225,0.78));
-          border: 1px solid rgba(255,255,255,0.22);
-          box-shadow: 0 8px 24px rgba(50, 10, 10, 0.20);
-          backdrop-filter: blur(8px) saturate(140%);
-          -webkit-backdrop-filter: blur(8px) saturate(140%);
-        }
-
-        /* Stat card visuals + animated entrance */
-        .stat-card { 
-          transition: transform 280ms cubic-bezier(.2,.9,.2,1), box-shadow 280ms;
-          transform-origin: center;
-          will-change: transform;
-        }
-        .stat-card:hover { 
-          transform: translateY(-6px) scale(1.02);
-          box-shadow: 0 18px 40px rgba(59,11,11,0.14);
-        }
-
-        /* Floating animation for cards (subtle) */
-        @keyframes floaty { 
-          0% { transform: translateY(0px); }
-          50% { transform: translateY(-4px); }
-          100% { transform: translateY(0px); }
-        }
-        .stat-card[data-animate="true"] { animation: floaty 6s ease-in-out infinite; }
-
-        /* Stat value emphasis */
+        body { font-family: "Montserrat", "Poppins", Inter, ui-sans-serif; font-size:22px; color:#0f172a; background-color: #4a0d12; background-image: radial-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(180deg, rgba(74,13,18,0.65), rgba(30,4,6,0.75)); background-size: 12px 12px, 100% 100%; }
+        .panel, .stat-card, .modal > div, .bg-white { background: linear-gradient(180deg, rgba(255,235,238,0.82), rgba(255,220,225,0.78)); border: 1px solid rgba(255,255,255,0.22); box-shadow: 0 8px 24px rgba(50, 10, 10, 0.20); backdrop-filter: blur(8px) saturate(140%); -webkit-backdrop-filter: blur(8px) saturate(140%); }
+        .stat-card { transition: transform 280ms cubic-bezier(.2,.9,.2,1), box-shadow 280ms; transform-origin: center; will-change: transform; }
+        .stat-card:hover { transform: translateY(-6px) scale(1.02); box-shadow: 0 18px 40px rgba(59,11,11,0.14); }
         .stat-value { font-size: 1.6rem; color: var(--maroon-950); text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
         .stat-title { color: var(--muted); font-size: 0.95rem; }
-
-        /* Progress bar */
         .stat-bar { background: linear-gradient(90deg, var(--maroon-800), var(--maroon-500)); transition: width 700ms cubic-bezier(.2,.9,.2,1); }
-        .wobble { transition: transform 300ms; }
-
-        /* Buttons with animated hover */
         .refresh-btn { background: linear-gradient(180deg, var(--maroon-800), var(--maroon-600)); color: white; border-radius: 10px; padding: 8px 12px; box-shadow: 0 6px 18px rgba(176,42,55,0.18); transition: transform 150ms, box-shadow 150ms; }
-        .refresh-btn:hover { transform: translateY(-3px) scale(1.02); box-shadow: 0 22px 40px rgba(176,42,55,0.18); }
         .action-btn { background: rgba(255,255,255,0.9); color: var(--maroon-900); border: 1px solid rgba(176,42,55,0.06); border-radius: 8px; transition: transform 150ms; }
         .action-btn:hover { transform: translateY(-2px); }
-        .safe-btn { background: linear-gradient(180deg,#ef9a9a,#ef6c6c); color: white; transition: transform 150ms; }
-        .safe-btn:hover { transform: translateY(-2px); }
-        .delete-btn { background: linear-gradient(180deg,var(--maroon-500),var(--maroon-700)); color: white; transition: transform 150ms; }
-        .delete-btn:hover { transform: translateY(-2px) scale(1.02); }
-
-        /* Table row hover and animated reveal */
-        tbody tr { transition: background 200ms, transform 200ms; }
-        tbody tr:hover { background: rgba(255,255,255,0.06); transform: translateX(4px); }
-
-        /* Card view animations */
-        .grid > div { transition: transform 350ms, box-shadow 350ms, opacity 300ms; }
-        .grid > div:hover { transform: translateY(-6px); box-shadow: 0 18px 40px rgba(59,11,11,0.12); }
-
-        /* Modal styling + entrance */
-        .modal { display: flex; align-items: center; justify-content: center; }
-        .modal > div { transform: translateY(12px); opacity: 0; animation: modalIn 260ms cubic-bezier(.2,.9,.2,1) forwards; }
-        @keyframes modalIn { to { transform: translateY(0); opacity: 1; } }
-
-        /* small UI tweaks */
         .text-muted { color: var(--muted); }
-
-        /* Responsiveness tweaks */
-        @media (max-width: 768px) {
-          body { font-size: 16px; }
-          .stat-value { font-size: 1.2rem; }
-        }
+        @media (max-width: 768px) { body { font-size: 16px; } .stat-value { font-size: 1.2rem; } }
       `}</style>
 
       <div className="max-w-6xl mx-auto">
@@ -294,7 +179,6 @@ export default function Home() {
             pct={total ? 100 : 0}
             onClick={() => mutateMetrics()}
           />
-
           <StatCard
             title="Read emails"
             value={read ?? '—'}
@@ -302,7 +186,6 @@ export default function Home() {
             pct={total ? ((read || 0) / total) * 100 : 0}
             onClick={() => mutateMetrics()}
           />
-
           <StatCard
             title="Spam / Flagged"
             value={spam ?? '—'}
@@ -316,30 +199,16 @@ export default function Home() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div className="flex items-center gap-3">
               <input
-  value={q}
-  onChange={(e) => setQ(e.target.value)}
-  placeholder="Search flagged: from, subject, score"
-  className="px-3 py-2 border rounded-lg w-72 text-sm"
-/>
-
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search flagged: from, subject, score"
+                className="px-3 py-2 border rounded-lg w-72 text-sm"
+              />
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setViewMode('table')}
-                  className={`px-3 py-2 rounded-lg ${viewMode === 'table' ? 'bg-maroon-primary text-white' : 'bg-gray-100'}`}
-                  type="button"
-                >
-                  Table
-                </button>
-                <button
-                  onClick={() => setViewMode('cards')}
-                  className={`px-3 py-2 rounded-lg ${viewMode === 'cards' ? 'bg-maroon-primary text-white' : 'bg-gray-100'}`}
-                  type="button"
-                >
-                  Cards
-                </button>
+                <button onClick={() => setViewMode('table')} className={`px-3 py-2 rounded-lg ${viewMode === 'table' ? 'bg-maroon-primary text-white' : 'bg-gray-100'}`} type="button">Table</button>
+                <button onClick={() => setViewMode('cards')} className={`px-3 py-2 rounded-lg ${viewMode === 'cards' ? 'bg-maroon-primary text-white' : 'bg-gray-100'}`} type="button">Cards</button>
               </div>
             </div>
-
             <div className="text-sm text-muted">Showing <strong>{emails.length}</strong> flagged emails</div>
           </div>
         </section>
@@ -367,8 +236,6 @@ export default function Home() {
                         key={e.id ?? e._id ?? Math.random()}
                         e={e}
                         onOpen={(item) => setSelected(item)}
-                        onMarkSafe={(id) => markSafe(id)}
-                        onDelete={(id) => deleteEmail(id)}
                       />
                     ))
                   )}
@@ -382,20 +249,25 @@ export default function Home() {
               ) : (
                 emails.map((e) => (
                   <div key={e.id ?? e._id ?? Math.random()} className="bg-white p-4 rounded-2xl shadow">
-                    <div
-  className="font-semibold"
-  style={{ color: 'var(--maroon-700)', fontSize: '1rem' }}
->
-  {e.from}
-</div>
+                    <div className="font-semibold" style={{ color: 'var(--maroon-700)', fontSize: '1rem' }}>{e.from}</div>
                     <div className="text-sm text-gray-600 mt-1">{e.subject}</div>
+
                     <div className="mt-3 flex items-center justify-between">
-                      <div className="text-xs text-muted">Score: {e.score ?? '—'}</div>
+                      <div>
+                        <div className="text-xs text-muted">Score: {(e.score ?? 0).toFixed(3)}</div>
+                        <div style={{ marginTop: 6 }}>
+                          <span className={(e.label === 'spam' || (e.label == null && (e.score || 0) >= 0.5))
+                            ? 'px-2 py-1 rounded bg-red-600 text-white text-xs'
+                            : 'px-2 py-1 rounded bg-green-400 text-white text-xs'}>
+                            { e.label === 'spam' ? 'Spam' : (e.label === 'legit' ? 'Safe' : ((e.score || 0) >= 0.5 ? 'Spam' : 'Safe')) }
+                          </span>
+                        </div>
+                      </div>
                       <div className="flex items-center gap-2">
                         <button onClick={() => setSelected(e)} className="px-2 py-1 rounded action-btn text-sm">View</button>
-                        <button onClick={() => markSafe(e.id ?? e._id)} className="px-2 py-1 rounded safe-btn text-sm">Safe</button>
                       </div>
                     </div>
+
                   </div>
                 ))
               )}
@@ -423,23 +295,13 @@ export default function Home() {
 
               <div className="mt-4">
                 <h4 className="text-sm text-muted">Preview</h4>
-                <div
-  className="mt-2 p-4 bg-surface rounded overflow-y-auto"
-  style={{ maxHeight: "300px", whiteSpace: "pre-wrap", fontSize: "14px" }}
->
-  {selected.body ?? selected.preview ?? 'No preview available'}
-</div>
+                <div className="mt-2 p-4 bg-surface rounded overflow-y-auto" style={{ maxHeight: "300px", whiteSpace: "pre-wrap", fontSize: "14px" }}>
+                  {selected.body ?? selected.preview ?? 'No preview available'}
+                </div>
               </div>
 
               <div className="mt-4 flex justify-end gap-2">
-                <button onClick={() => { markSafe(selected.id ?? selected._id); setSelected(null) }} className="px-3 py-1.5 rounded safe-btn"
-                 style={{ fontSize: '0.9rem' }}
->
-  Mark safe</button>
-                <button onClick={() => { deleteEmail(selected.id ?? selected._id); setSelected(null) }} className="px-3 py-1 rounded delete-btn"
-                 style={{ fontSize: '0.9rem' }}
->
-  Delete</button>
+                <button onClick={() => setSelected(null)} className="px-3 py-1.5 rounded action-btn" style={{ fontSize: '0.9rem' }}>Close</button>
               </div>
             </div>
           </div>

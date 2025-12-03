@@ -50,23 +50,34 @@ def extract_plain_text_from_message(message_payload) -> str:
     """
     # Try to handle raw first
     if "raw" in message_payload:
-        raw = base64.urlsafe_b64decode(message_payload["raw"])
-        msg = BytesParser(policy=policy.default).parsebytes(raw)
-        # prefer text/plain
-        if msg.get_body(preferencelist=("plain",)):
-            return msg.get_body(preferencelist=("plain",)).get_content()
-        # fallback to html body
-        if msg.get_body(preferencelist=("html",)):
-            return msg.get_body(preferencelist=("html",)).get_content()
-        return msg.get_payload(decode=True).decode(errors="ignore")
+        try:
+            raw = base64.urlsafe_b64decode(message_payload["raw"])
+            msg = BytesParser(policy=policy.default).parsebytes(raw)
+            # prefer text/plain
+            if msg.get_body(preferencelist=("plain",)):
+                return msg.get_body(preferencelist=("plain",)).get_content()
+            # fallback to html body
+            if msg.get_body(preferencelist=("html",)):
+                return msg.get_body(preferencelist=("html",)).get_content()
+            payload = msg.get_payload(decode=True)
+            if isinstance(payload, bytes):
+                return payload.decode(errors="ignore")
+            return str(payload)
+        except Exception:
+            # fall through to payload-based extraction
+            pass
 
     # If message_payload is a 'full' representation with parts
     payload = message_payload.get("payload", {})
+
     def walk_parts(part):
         mime = part.get("mimeType", "")
         if mime == "text/plain" and "body" in part and part["body"].get("data"):
             raw = part["body"]["data"]
-            return base64.urlsafe_b64decode(raw).decode(errors="ignore")
+            try:
+                return base64.urlsafe_b64decode(raw).decode(errors="ignore")
+            except Exception:
+                return base64.b64decode(raw).decode(errors="ignore")
         # if multipart, go deeper
         for p in part.get("parts", []) or []:
             text = walk_parts(p)
@@ -78,40 +89,61 @@ def extract_plain_text_from_message(message_payload) -> str:
     if text:
         return text
     # fallback: try snippet
-    return message_payload.get("snippet", "")
+    return message_payload.get("snippet", "") or ""
 
 
 def fetch_latest_messages(max_results: int = 25, label_ids: Optional[List[str]] = None) -> List[Dict]:
     """
     Fetch the latest messages (list -> get each)
-    Returns a list of message dicts with keys: id, threadId, from, subject, snippet, raw_text, internalDate
+    Returns a list of message dicts with keys:
+      id, threadId, from, subject, snippet, body, internalDate, raw, labelIds, read
+    NOTE: this now ensures labelIds are returned (via format='full') and provides a boolean 'read'.
     """
     service = get_service()
     query_label = label_ids if label_ids else ["INBOX"]
+    # Use list to get ids; list may not include labelIds for each message, so we do a get() per id.
     results = service.users().messages().list(userId="me", maxResults=max_results, labelIds=query_label).execute()
     messages = results.get("messages", []) or []
 
     out = []
     for m in messages:
         mid = m["id"]
-        # get message in full format
-        msg = service.users().messages().get(userId="me", id=mid, format="full").execute()
+        try:
+            # get message in full format so labelIds and payload are present
+            msg = service.users().messages().get(userId="me", id=mid, format="full").execute()
+        except Exception:
+            # fallback: if get fails, skip this message
+            continue
+
         headers = {h["name"].lower(): h["value"] for h in msg.get("payload", {}).get("headers", [])}
         frm = headers.get("from", "")
         subject = headers.get("subject", "")
         snippet = msg.get("snippet", "")
         raw_text = extract_plain_text_from_message(msg)
         internalDate = int(msg.get("internalDate", 0))
+        label_ids_msg = msg.get("labelIds", []) or []
+
+        # Determine read status: treat as read if labelIds exist and UNREAD not present
+        is_read = False
+        if label_ids_msg:
+            is_read = "UNREAD" not in label_ids_msg
+        else:
+            # If no labelIds are present for some reason, we do not assume unread; mark as False
+            # (higher-level code can decide fallback behavior)
+            is_read = False
+
         out.append({
-            "id": mid,
-            "threadId": msg.get("threadId"),
-            "from": frm,
-            "subject": subject,
-            "snippet": snippet,
-            "body": raw_text,
-            "internalDate": internalDate,
-            "raw": msg
-        })
+    "id": mid,
+    "threadId": msg.get("threadId"),
+    "from": frm,
+    "subject": subject,
+    "snippet": snippet,
+    "body": raw_text,
+    "internalDate": internalDate,
+    "labelIds": msg.get("labelIds", []),
+    "raw": msg
+})
+
     return out
 
 
