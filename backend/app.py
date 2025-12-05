@@ -5,7 +5,7 @@ from typing import List, Dict
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from gmail_service import fetch_latest_messages, mark_as_read, delete_message
-import predict
+from hybrid_predict import classify_email   # using the new hybrid model
 from pathlib import Path
 
 app = FastAPI(title="ProPhishy backend")
@@ -43,19 +43,19 @@ def get_metrics(max_results: int = 200):
     """
     Returns simple metrics computed from a recent fetch:
       - total: number of messages fetched (max_results)
-      - read: number of messages without 'UNREAD' label among fetched
+      - safe: number of messages without 'UNREAD' label among fetched (treated as safe)
       - spam: number of flagged messages (persisted locally)
     """
     try:
         msgs = fetch_latest_messages(max_results=max_results)
     except Exception:
         # fallback to stored flagged data only
-        return {"total": None, "read": None, "spam": len(_flagged)}
+        return {"total": None, "safe": None, "spam": len(_flagged)}
     total = len(msgs)
     # count messages that do NOT have 'UNREAD' label => those are read
-    read = sum(1 for m in msgs if 'UNREAD' not in (m.get("labelIds") or []))
+    safe = sum(1 for m in msgs if 'UNREAD' not in (m.get("labelIds") or []))
     spam = len(_flagged)
-    return {"total": total, "read": read, "spam": spam}
+    return {"total": total, "safe": safe, "spam": spam}
 
 @app.get("/flagged")
 def get_flagged():
@@ -73,10 +73,23 @@ def refresh_emails(max_results: int = 25):
         raise HTTPException(status_code=500, detail=str(e))
 
     changed = False
-    # classify and add to flagged if label says spam or classifier predicts spam
+
     for msg in messages:
-        text = (msg.get("subject", "") or "") + "\n\n" + (msg.get("body") or msg.get("snippet", ""))
-        pred = predict.classify_email(text)
+        subject = msg.get("subject", "") or ""
+        body = msg.get("body") or msg.get("snippet", "") or ""
+
+        # HYBRID MODEL: subject TF-IDF + body BiLSTM
+        pred = classify_email(subject, body)
+
+        # DEBUG PRINT
+        print("\n------------------------------------")
+        print("EMAIL:", subject[:100])
+        print("  p_subject:", pred.get("p_subject"))
+        print("  p_body:", pred.get("p_body"))
+        print("  final_score:", pred.get("score"))
+        print("  label:", pred.get("label"))
+        print("------------------------------------")
+
         entry = {
             "id": msg["id"],
             "threadId": msg.get("threadId"),
@@ -86,25 +99,26 @@ def refresh_emails(max_results: int = 25):
             "body": msg.get("body"),
             "score": pred.get("score"),
             "label": pred.get("label"),
+            "p_subject": pred.get("p_subject"),
+            "p_body": pred.get("p_body"),
             "raw": None
         }
-        # If we already have this message in flagged store, update its score/label
+
         exists = next((x for x in _flagged if x["id"] == entry["id"]), None)
 
         if exists:
-            # always update stored entry so score/label reflect latest classifier
             exists.update(entry)
             changed = True
         else:
-            # if classifier says spam, insert new flagged entry
             if pred.get("label") == "spam":
                 _flagged.insert(0, entry)
                 changed = True
-            # else: do not add legit messages to flagged list
 
     if changed:
         save_flagged()
+
     return {"flagged_count": len(_flagged), "flagged": _flagged}
+
 
 @app.post("/action/mark-safe")
 def mark_safe(payload: Dict):

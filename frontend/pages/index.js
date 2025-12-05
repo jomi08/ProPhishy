@@ -88,13 +88,17 @@ function EmailRow({ e, onOpen }) {
 }
 
 export default function Home() {
-  // Use the backend /metrics endpoint
+  // Use internal Next.js proxy endpoints to avoid CORS and env issues
+  const METRICS_ENDPOINT = '/api/proxy/metrics'
+  const FLAGGED_ENDPOINT = '/api/proxy/flagged'
+
   const { data: metrics, mutate: mutateMetrics, error: errMetrics } = useSWR(
-    `${API_BASE}/metrics`,
+    METRICS_ENDPOINT,
     fetcher,
     { refreshInterval: 0 }
   )
-  const { data: flagged, mutate: mutateFlagged } = useSWR(`${API_BASE}/flagged`, fetcher, {
+
+  const { data: flagged, mutate: mutateFlagged } = useSWR(FLAGGED_ENDPOINT, fetcher, {
     refreshInterval: 0,
   })
 
@@ -122,11 +126,18 @@ export default function Home() {
   }, [flagged, q])
 
   const total = metrics?.total ?? 0
-  const read = metrics?.read ?? 0
+  const safe = metrics?.safe ?? metrics?.read ?? 0
   const spam = metrics?.spam ?? 0
 
   async function refreshAll() {
     setLastRefreshed(new Date())
+    try {
+      // trigger backend refresh via the proxy so new messages are fetched and classified
+      await fetch('/api/proxy/refresh', { method: 'POST' })
+    } catch (err) {
+      // ignore refresh errors but still revalidate cached endpoints
+      console.warn('refresh trigger failed', err)
+    }
     await Promise.all([mutateMetrics(), mutateFlagged()])
   }
 
@@ -180,10 +191,10 @@ export default function Home() {
             onClick={() => mutateMetrics()}
           />
           <StatCard
-            title="Read emails"
-            value={read ?? '—'}
-            hint="Marked as read"
-            pct={total ? ((read || 0) / total) * 100 : 0}
+            title="Safe emails"
+              value={safe ?? '—'}
+              hint="Marked as safe"
+              pct={total ? ((safe || 0) / total) * 100 : 0}
             onClick={() => mutateMetrics()}
           />
           <StatCard
