@@ -4,36 +4,36 @@ import EmailModal from './EmailModal'
 export default function EmailList({ emails }) {
 
   // -----------------------------
-  // Mark Safe Function
+  // Mark Safe Function (via Next proxy)
   // -----------------------------
   const markSafe = async (id) => {
     try {
-      await fetch(`${process.env.BACKEND_URL}/action/mark-safe`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      await fetch('/api/proxy/action/mark-safe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
-      });
-      alert("Email marked as safe!");
+      })
+      alert('Email marked as safe!')
     } catch (err) {
-      console.error("markSafe error:", err);
+      console.error('markSafe error:', err)
     }
-  };
+  }
 
   // -----------------------------
-  // Delete Email Function
+  // Delete Email Function (via Next proxy)
   // -----------------------------
   const deleteEmail = async (id) => {
     try {
-      await fetch(`${process.env.BACKEND_URL}/action/delete`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      await fetch('/api/proxy/action/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
-      });
-      alert("Email deleted!");
+      })
+      alert('Email deleted!')
     } catch (err) {
-      console.error("deleteEmail error:", err);
+      console.error('deleteEmail error:', err)
     }
-  };
+  }
 
   return (
     <div>
@@ -41,13 +41,13 @@ export default function EmailList({ emails }) {
 
       {emails && emails.length > 0 ? (
         emails.map((email, idx) => (
-          <div key={idx} className="email-card">
-            <p><b>From:</b> {email.sender}</p>
+          <div key={email.id ?? idx} className="email-card">
+            <p><b>From:</b> {email.from ?? email.sender ?? 'Unknown'}</p>
             <p><b>Subject:</b> {email.subject}</p>
-            <p>{email.snippet}</p>
+            <p>{email.snippet ?? email.preview ?? ''}</p>
 
-            <p style={{ color: email.is_phishing ? "red" : "green" }}>
-              {email.is_phishing ? "⚠️ Phishing" : "✔ Safe"}
+            <p style={{ color: (email.is_phishing || (email.score || 0) >= 0.5) ? 'red' : 'green' }}>
+              {(email.is_phishing || (email.score || 0) >= 0.5) ? '⚠️ Phishing' : '✔ Safe'}
             </p>
 
             {/* Action buttons for each email */}
@@ -61,5 +61,5 @@ export default function EmailList({ emails }) {
         <p>No flagged emails found.</p>
       )}
     </div>
-  );
+  )
 }

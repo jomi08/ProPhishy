@@ -11,8 +11,12 @@ Saves:
   - tokenizer.pkl
   - tokenizer_meta.json  (stores num_words and maxlen)
 
-Run example:
-  python train_model_improved.py --data phishing_email.csv --out_dir . --num_words 50000 --maxlen 200 --epochs 6 --batch 64
+Run examples:
+  # simplest: put CSV at backend/data/phishing_email.csv and just run:
+  #   python train_model_improved.py
+  #
+  # or specify a different dataset / output dir:
+  #   python train_model_improved.py --data path/to/your.csv --out_dir .
 """
 
 import os
@@ -30,10 +34,20 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Embedding, Bidirectional, LSTM, Dense, Dropout
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 
-# ---------- args ----------
+# ---------- paths / args ----------
+BASE_DIR = os.path.dirname(__file__)  # backend/ directory
+
 parser = argparse.ArgumentParser()
-parser.add_argument("--data", required=True, help="CSV file with text_combined,label")
-parser.add_argument("--out_dir", default=".", help="Directory to save model/tokenizer")
+parser.add_argument(
+    "--data",
+    default=os.path.join(BASE_DIR, "data", "phishing_email.csv"),
+    help="CSV file with text_combined,label (default: backend/data/phishing_email.csv)",
+)
+parser.add_argument(
+    "--out_dir",
+    default=BASE_DIR,
+    help="Directory to save model/tokenizer (default: backend/ directory)",
+)
 parser.add_argument("--num_words", type=int, default=50000, help="Top vocabulary size (num_words)")
 parser.add_argument("--maxlen", type=int, default=200, help="Sequence maxlen")
 parser.add_argument("--embed_dim", type=int, default=128, help="Embedding size")
