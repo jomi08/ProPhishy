@@ -30,34 +30,30 @@ const fetcher = async (url) => {
   }
 }
 
-function StatCard({ title, value, hint, pct, onClick }) {
+function StatCard({ title, value, hint, pct, cardType }) {
   return (
-    <div className="stat-card p-4 bg-white rounded-2xl shadow-md w-full md:w-auto" data-animate="true">
+    <div 
+      className="stat-card p-4 rounded-2xl shadow-md w-full md:w-auto" 
+      data-animate="true"
+    >
       <div className="flex items-start gap-4">
         <div className="flex-1">
-          <h4 className="stat-title text-sm font-medium">{title}</h4>
-          <div className="mt-2 text-2xl font-extrabold stat-value">{value}</div>
-          {hint ? <div className="text-xs text-muted mt-1">{hint}</div> : null}
+          <h4 className="stat-title text-sm font-medium" style={{ color: '#1B1F23' }}>{title}</h4>
+          <div className="mt-2 text-2xl font-extrabold stat-value" style={{ color: '#1B1F23' }}>{value}</div>
+          {hint ? <div className="text-xs mt-1" style={{ color: '#1B1F23', opacity: 0.7 }}>{hint}</div> : null}
           {typeof pct === 'number' && (
             <div className="mt-3">
-              <div className="w-full bg-surface rounded-full h-2 overflow-hidden">
+              <div className="w-full rounded-full h-2 overflow-hidden" style={{ backgroundColor: 'rgba(0,0,0,0.1)' }}>
                 <div
-                  style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                  style={{ 
+                    width: `${Math.max(0, Math.min(100, pct))}%`
+                  }}
                   className="h-2 rounded-full stat-bar"
                 />
               </div>
-              <div className="text-xs text-muted mt-1">{pct.toFixed(0)}% of total</div>
+              <div className="text-xs mt-1" style={{ color: '#1B1F23', opacity: 0.7 }}>{pct.toFixed(0)}% of total</div>
             </div>
           )}
-        </div>
-        <div className="flex-shrink-0">
-          <button
-            onClick={onClick}
-            className="px-3 py-1 refresh-btn text-sm"
-            type="button"
-          >
-            Refresh
-          </button>
         </div>
       </div>
     </div>
@@ -66,10 +62,11 @@ function StatCard({ title, value, hint, pct, onClick }) {
 
 function EmailRow({ e, onOpen }) {
   const score = (typeof e.score === 'number') ? e.score : parseFloat(e.score || 0)
-  const label = (e.label ? String(e.label).toLowerCase() : (score >= 0.5 ? 'spam' : 'legit'))
+  const isMarkedSafe = e.marked_safe === true
+  const label = isMarkedSafe ? 'legit' : (e.label ? String(e.label).toLowerCase() : (score >= 0.5 ? 'spam' : 'legit'))
   const badgeClass = label === 'spam'
     ? 'px-2 py-1 text-xs rounded bg-red-600 text-white'
-    : 'px-2 py-1 text-xs rounded bg-green-500 text-white'
+    : 'px-2 py-1 text-xs rounded bg-green-500 text-white flex items-center justify-center gap-1'
 
   return (
     <tr className="border-t hover:bg-gray-50">
@@ -78,7 +75,12 @@ function EmailRow({ e, onOpen }) {
       <td className="py-3 px-2 text-sm">{(score || 0).toFixed(3)}</td>
       <td className="py-3 px-2 text-right flex items-center justify-end gap-2">
         <div className={badgeClass} style={{ minWidth: 56, textAlign: 'center' }}>
-          {label === 'spam' ? 'Spam' : 'Safe'}
+          {label === 'spam' ? 'Spam' : (
+            <>
+              <span>✓</span>
+              <span>Safe</span>
+            </>
+          )}
         </div>
 
         <button onClick={() => onOpen(e)} className="px-2 py-1 text-xs rounded action-btn" type="button">View</button>
@@ -90,7 +92,7 @@ function EmailRow({ e, onOpen }) {
 export default function Home() {
   // Use internal Next.js proxy endpoints to avoid CORS and env issues
   const METRICS_ENDPOINT = '/api/proxy/metrics'
-  const FLAGGED_ENDPOINT = '/api/proxy/flagged'
+  const EMAILS_ENDPOINT = '/api/proxy/emails'
 
   const { data: metrics, mutate: mutateMetrics, error: errMetrics } = useSWR(
     METRICS_ENDPOINT,
@@ -98,22 +100,24 @@ export default function Home() {
     { refreshInterval: 0 }
   )
 
-  const { data: flagged, mutate: mutateFlagged } = useSWR(FLAGGED_ENDPOINT, fetcher, {
+  const { data: emails, mutate: mutateEmails } = useSWR(EMAILS_ENDPOINT, fetcher, {
     refreshInterval: 0,
   })
 
   const [loadingAction, setLoadingAction] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
   const [viewMode, setViewMode] = useState('table') // 'table' or 'cards'
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState(null)
   const [lastRefreshed, setLastRefreshed] = useState(null)
 
   useEffect(() => {
-    if (metrics || flagged) setLastRefreshed(new Date())
-  }, [metrics, flagged])
+    if (metrics || emails) setLastRefreshed(new Date())
+  }, [metrics, emails])
 
-  const emails = useMemo(() => {
-    const list = Array.isArray(flagged) ? flagged : flagged?.items ?? flagged?.emails ?? []
+  const filteredEmails = useMemo(() => {
+    const list = Array.isArray(emails) ? emails : (emails?.items ?? emails?.emails ?? [])
+    if (!list || !Array.isArray(list)) return []
     if (!q) return list
     const s = q.trim().toLowerCase()
     return list.filter((e) => {
@@ -123,22 +127,30 @@ export default function Home() {
         String(e.score || '').toLowerCase().includes(s)
       )
     })
-  }, [flagged, q])
+  }, [emails, q])
 
   const total = metrics?.total ?? 0
   const safe = metrics?.safe ?? metrics?.read ?? 0
   const spam = metrics?.spam ?? 0
 
   async function refreshAll() {
+    setRefreshing(true)
     setLastRefreshed(new Date())
     try {
       // trigger backend refresh via the proxy so new messages are fetched and classified
-      await fetch('/api/proxy/refresh', { method: 'POST' })
+      const res = await fetch('/api/proxy/refresh', { method: 'POST' })
+      const data = await res.json()
+      await Promise.all([mutateMetrics(), mutateEmails()])
+      if (data && data.total !== undefined) {
+        alert(`Refreshed! Total: ${data.total}, Spam: ${data.spam}, Safe: ${data.safe}`)
+      }
     } catch (err) {
       // ignore refresh errors but still revalidate cached endpoints
       console.warn('refresh trigger failed', err)
+      await Promise.all([mutateMetrics(), mutateEmails()])
+    } finally {
+      setRefreshing(false)
     }
-    await Promise.all([mutateMetrics(), mutateFlagged()])
   }
 
   return (
@@ -174,10 +186,18 @@ export default function Home() {
             </div>
             <button
               onClick={refreshAll}
-              className="px-3 py-2 refresh-btn rounded-lg shadow"
+              className="px-3 py-2 refresh-btn rounded-lg shadow flex items-center gap-2"
               type="button"
+              disabled={refreshing}
             >
-              Refresh
+              {refreshing ? (
+                <>
+                  <span className="inline-block animate-spin">⟳</span>
+                  Refreshing...
+                </>
+              ) : (
+                '⟳ Refresh'
+              )}
             </button>
           </div>
         </header>
@@ -188,21 +208,21 @@ export default function Home() {
             value={total ?? '—'}
             hint="All emails received"
             pct={total ? 100 : 0}
-            onClick={() => mutateMetrics()}
+            cardType="total"
           />
           <StatCard
             title="Safe emails"
-              value={safe ?? '—'}
-              hint="Marked as safe"
-              pct={total ? ((safe || 0) / total) * 100 : 0}
-            onClick={() => mutateMetrics()}
+            value={safe ?? '—'}
+            hint="Marked as safe"
+            pct={total ? ((safe || 0) / total) * 100 : 0}
+            cardType="safe"
           />
           <StatCard
             title="Spam / Flagged"
             value={spam ?? '—'}
             hint="Flagged by the classifier"
             pct={total ? ((spam || 0) / total) * 100 : 0}
-            onClick={() => mutateMetrics()}
+            cardType="spam"
           />
         </section>
 
@@ -216,11 +236,33 @@ export default function Home() {
                 className="px-3 py-2 border rounded-lg w-72 text-sm"
               />
               <div className="flex items-center gap-2">
-                <button onClick={() => setViewMode('table')} className={`px-3 py-2 rounded-lg ${viewMode === 'table' ? 'bg-maroon-primary text-white' : 'bg-gray-100'}`} type="button">Table</button>
-                <button onClick={() => setViewMode('cards')} className={`px-3 py-2 rounded-lg ${viewMode === 'cards' ? 'bg-maroon-primary text-white' : 'bg-gray-100'}`} type="button">Cards</button>
+                <button 
+                  onClick={() => setViewMode('table')} 
+                  className={`px-3 py-2 rounded-lg text-sm transition-all ${
+                    viewMode === 'table' 
+                      ? 'border-2 border-gray-400 shadow-md font-bold' 
+                      : 'bg-gray-100 border-2 border-transparent hover:border-gray-300'
+                  }`}
+                  style={viewMode === 'table' ? { color: '#1B1F23' } : {}}
+                  type="button"
+                >
+                  Table
+                </button>
+                <button 
+                  onClick={() => setViewMode('cards')} 
+                  className={`px-3 py-2 rounded-lg text-sm transition-all ${
+                    viewMode === 'cards' 
+                      ? 'border-2 border-gray-400 shadow-md font-bold' 
+                      : 'bg-gray-100 border-2 border-transparent hover:border-gray-300'
+                  }`}
+                  style={viewMode === 'cards' ? { color: '#1B1F23' } : {}}
+                  type="button"
+                >
+                  Cards
+                </button>
               </div>
             </div>
-            <div className="text-sm text-muted">Showing <strong>{emails.length}</strong> flagged emails</div>
+            <div className="text-sm text-muted">Showing <strong>{filteredEmails?.length ?? 0}</strong> emails</div>
           </div>
         </section>
 
@@ -237,12 +279,12 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody>
-                  {emails.length === 0 ? (
+                  {filteredEmails.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="p-6 text-center text-muted">No flagged emails</td>
+                      <td colSpan={4} className="p-6 text-center text-muted">No emails found</td>
                     </tr>
                   ) : (
-                    emails.map((e) => (
+                    filteredEmails.map((e) => (
                       <EmailRow
                         key={e.id ?? e._id ?? Math.random()}
                         e={e}
@@ -255,32 +297,42 @@ export default function Home() {
             </div>
           ) : (
             <div className="grid md:grid-cols-3 gap-4">
-              {emails.length === 0 ? (
-                <div className="text-muted">No flagged emails</div>
+              {filteredEmails.length === 0 ? (
+                <div className="text-muted">No emails found</div>
               ) : (
-                emails.map((e) => (
-                  <div key={e.id ?? e._id ?? Math.random()} className="bg-white p-4 rounded-2xl shadow">
-                    <div className="font-semibold" style={{ color: 'var(--maroon-700)', fontSize: '1rem' }}>{e.from}</div>
-                    <div className="text-sm text-gray-600 mt-1">{e.subject}</div>
+                filteredEmails.map((e) => {
+                  const isMarkedSafe = e.marked_safe === true
+                  const isSpam = isMarkedSafe ? false : (e.label === 'spam' || (e.label == null && (e.score || 0) >= 0.5))
+                  
+                  return (
+                    <div key={e.id ?? e._id ?? Math.random()} className="bg-white p-4 rounded-2xl shadow">
+                      <div className="font-semibold" style={{ color: 'var(--maroon-700)', fontSize: '1rem' }}>{e.from}</div>
+                      <div className="text-sm text-gray-600 mt-1">{e.subject}</div>
 
-                    <div className="mt-3 flex items-center justify-between">
-                      <div>
-                        <div className="text-xs text-muted">Score: {(e.score ?? 0).toFixed(3)}</div>
-                        <div style={{ marginTop: 6 }}>
-                          <span className={(e.label === 'spam' || (e.label == null && (e.score || 0) >= 0.5))
-                            ? 'px-2 py-1 rounded bg-red-600 text-white text-xs'
-                            : 'px-2 py-1 rounded bg-green-400 text-white text-xs'}>
-                            { e.label === 'spam' ? 'Spam' : (e.label === 'legit' ? 'Safe' : ((e.score || 0) >= 0.5 ? 'Spam' : 'Safe')) }
-                          </span>
+                      <div className="mt-3 flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-muted">Score: {(e.score ?? 0).toFixed(3)}</div>
+                          <div style={{ marginTop: 6 }}>
+                            <span className={isSpam
+                              ? 'px-2 py-1 rounded bg-red-600 text-white text-xs'
+                              : 'px-2 py-1 rounded bg-green-500 text-white text-xs inline-flex items-center gap-1'}>
+                              {isSpam ? 'Spam' : (
+                                <>
+                                  <span>✓</span>
+                                  <span>Safe</span>
+                                </>
+                              )}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setSelected(e)} className="px-2 py-1 rounded action-btn text-sm">View</button>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => setSelected(e)} className="px-2 py-1 rounded action-btn text-sm">View</button>
-                      </div>
-                    </div>
 
-                  </div>
-                ))
+                    </div>
+                  )
+                })
               )}
             </div>
           )}
@@ -291,32 +343,75 @@ export default function Home() {
         </section>
 
         {/* Modal */}
-        {selected && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center modal" role="dialog">
-            <div className="bg-white max-w-2xl w-full rounded-2xl shadow p-6">
-              <div className="flex items-start justify-between">
+        {selected && (() => {
+          const isMarkedSafe = selected.marked_safe === true
+          const isSpam = isMarkedSafe ? false : (selected.label === 'spam' || (selected.label == null && (selected.score || 0) >= 0.5))
+          
+          return (
+            <div className="fixed inset-0 z-40 flex items-center justify-center modal" role="dialog">
+              <div className="bg-white max-w-2xl w-full rounded-2xl shadow p-6">
                 <div>
                   <h3 className="text-lg font-semibold">Email from {selected.from}</h3>
                   <div className="text-sm text-muted mt-1">Subject: {selected.subject}</div>
+                  <div className="mt-2">
+                    <span className={isSpam
+                      ? 'px-2 py-1 rounded bg-red-600 text-white text-xs'
+                      : 'px-2 py-1 rounded bg-green-500 text-white text-xs flex items-center gap-1 inline-flex'}>
+                      {isSpam ? 'Spam' : (
+                        <>
+                          <span>✓</span>
+                          <span>Safe</span>
+                        </>
+                      )}
+                    </span>
+                    <span className="text-xs text-muted ml-2">Score: {(selected.score ?? 0).toFixed(3)}</span>
+                  </div>
                 </div>
-                <div>
-                  <button onClick={() => setSelected(null)} className="px-3 py-1 rounded action-btn">Close</button>
-                </div>
-              </div>
 
-              <div className="mt-4">
-                <h4 className="text-sm text-muted">Preview</h4>
-                <div className="mt-2 p-4 bg-surface rounded overflow-y-auto" style={{ maxHeight: "300px", whiteSpace: "pre-wrap", fontSize: "14px" }}>
-                  {selected.body ?? selected.preview ?? 'No preview available'}
+                <div className="mt-4">
+                  <h4 className="text-sm text-muted">Preview</h4>
+                  <div className="mt-2 p-4 bg-surface rounded overflow-y-auto" style={{ maxHeight: "300px", whiteSpace: "pre-wrap", fontSize: "14px" }}>
+                    {selected.body ?? selected.preview ?? 'No preview available'}
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-4 flex justify-end gap-2">
-                <button onClick={() => setSelected(null)} className="px-3 py-1.5 rounded action-btn" style={{ fontSize: '0.9rem' }}>Close</button>
+                <div className="mt-4 flex justify-end gap-2">
+                  {isSpam && (
+                  <button
+                    onClick={async () => {
+                      setLoadingAction(true)
+                      try {
+                        const res = await fetch('/api/proxy/action/mark-safe', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ id: selected.id })
+                        })
+                        if (res.ok) {
+                          alert('Marked as safe!')
+                          // Update the selected email's label to show it as safe
+                          setSelected({ ...selected, label: 'legit', marked_safe: true })
+                          await mutateEmails()
+                          await mutateMetrics()
+                        }
+                      } catch (err) {
+                        console.error('mark-safe failed', err)
+                      } finally {
+                        setLoadingAction(false)
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded bg-green-500 text-white hover:bg-green-600"
+                    style={{ fontSize: '0.9rem' }}
+                    disabled={loadingAction}
+                  >
+                    {loadingAction ? 'Processing...' : 'Mark Safe'}
+                    </button>
+                  )}
+                  <button onClick={() => setSelected(null)} className="px-3 py-1.5 rounded action-btn" style={{ fontSize: '0.9rem' }}>Close</button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
     </div>
   )
