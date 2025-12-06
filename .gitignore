@@ -62,7 +62,6 @@ tfenv/
 /backend/credentials.json
 /backend/data_store.json
 /backend/flagged.json
-/backend/all_emails.json
 token.json
 credentials.json
 *.sqlite3
