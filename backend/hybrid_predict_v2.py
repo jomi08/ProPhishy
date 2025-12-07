@@ -12,9 +12,14 @@ from typing import Dict
 from bs4 import BeautifulSoup
 import numpy as np
 from tensorflow.keras.models import load_model
-from tensorflow.keras.preprocessing.sequence import pad_sequences
 import tensorflow as tf
 from tensorflow.keras.layers import Layer
+
+# Use tf.keras.utils for preprocessing instead of deprecated preprocessing module
+try:
+    from tensorflow.keras.preprocessing.sequence import pad_sequences
+except (ImportError, ModuleNotFoundError):
+    from tensorflow.keras.utils import pad_sequences
 
 # Attention Layer (must be defined for loading the model)
 class AttentionLayer(Layer):
